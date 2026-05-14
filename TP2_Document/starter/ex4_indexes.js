@@ -1,46 +1,62 @@
-/**
- * TP2 - Exercice 4 : Index et Optimisation
- */
-
 use("medical_db");
 
-// ─── 4.1 : Créer les index appropriés ────────────────────────────────────────
+// ─── 4.1 : INDEX CREATION ────────────────────────────────────────
 
-// Index 1 : Recherche fréquente par wilaya + antécédents
-// TODO: Créer l'index composé approprié
-// db.patients.createIndex({ ... });
+print("=== Creating indexes ===");
 
-// Index 2 : Recherche par date de consultation
-// TODO:
-// db.patients.createIndex({ ... });
+// Index 1 : wilaya + antecedents (frequent filtering)
+db.patients.createIndex({
+  "adresse.wilaya": 1,
+  antecedents: 1
+});
 
-// Index 3 : Texte sur diagnostics pour recherche full-text
-// TODO:
-// db.patients.createIndex({ ... });
+// Index 2 : consultation date (nested field)
+db.patients.createIndex({
+  "consultations.date": 1
+});
 
-// Index 4 : Analyses par patient (lookup)
-// TODO:
-// db.analyses.createIndex({ ... });
+// Index 3 : Full-text search on diagnosis
+db.patients.createIndex({
+  "consultations.diagnostic": "text"
+});
+
+// Index 4 : Analyses lookup by patient
+db.analyses.createIndex({
+  patient_id: 1
+});
+
+print("✅ Indexes created");
 
 
-// ─── 4.2 : Comparer avec explain() ────────────────────────────────────────────
+// ─── 4.2 : explain() comparison ────────────────────────────────────────
 
-// Requête de test
 const requeteTest = {
   "adresse.wilaya": "Alger",
   antecedents: "Diabète type 2"
 };
 
-print("=== AVANT index ===");
-// TODO: Exécuter avec explain("executionStats") et afficher les métriques
+print("=== AVANT index (run explain) ===");
 
-print("\n=== APRÈS index ===");
-// TODO: Après création de l'index, même requête avec explain()
-// Comparer : nReturned, totalDocsExamined, executionTimeMillis
+printjson(
+  db.patients.find(requeteTest).explain("executionStats")
+);
 
-// ─── 4.4 : Index TTL pour archivage ───────────────────────────────────────────
-// TODO: Créer un index TTL sur analyses.date pour expirer après 5 ans
-// db.analyses.createIndex(
-//   { date: 1 },
-//   { expireAfterSeconds: ??? }
-// );
+// After indexes (run same query again)
+print("\n=== APRÈS index (run explain) ===");
+
+printjson(
+  db.patients.find(requeteTest).explain("executionStats")
+);
+
+
+// ─── 4.4 : TTL INDEX ────────────────────────────────────────
+
+print("=== Creating TTL index ===");
+
+// 5 years = 5 * 365 * 24 * 60 * 60 seconds
+db.analyses.createIndex(
+  { date: 1 },
+  { expireAfterSeconds: 157680000 }
+);
+
+print(" TTL index created (5 years expiration)");
