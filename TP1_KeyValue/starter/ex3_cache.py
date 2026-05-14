@@ -24,49 +24,94 @@ def slow_db_get_product(product_id: int) -> Optional[dict]:
 
 def get_product_cached(r, product_id: int, ttl: int = 600) -> Optional[dict]:
     """
-    Pattern Cache-Aside :
-    1. Chercher dans Redis (clé: "product_cache:{product_id}")
-    2. Si MISS → chercher dans slow_db → stocker dans Redis avec TTL
-    3. Retourner le produit
-    4. Afficher si c'est un HIT ou MISS avec la latence
+    Cache-Aside:
+    - Redis first
+    - fallback DB
+    - store with TTL
     """
     start = time.time()
-    
-    # TODO: Implémenter le pattern Cache-Aside
-    # Utiliser json.dumps/json.loads pour sérialiser
-    
-    elapsed = time.time() - start
-    # TODO: Afficher "CACHE HIT (Xms)" ou "CACHE MISS (Xms)"
-    pass
+    key = f"product_cache:{product_id}"
+
+    # 1. CHECK CACHE
+    cached = r.get(key)
+
+    if cached:
+        product = json.loads(cached)
+        elapsed = (time.time() - start) * 1000
+        print(f"CACHE HIT ({elapsed:.2f}ms)")
+        return product
+
+    # 2. CACHE MISS → DB
+    product = slow_db_get_product(product_id)
+
+    if product is None:
+        elapsed = (time.time() - start) * 1000
+        print(f"CACHE MISS (not found) ({elapsed:.2f}ms)")
+        return None
+
+    # 3. STORE IN CACHE
+    r.setex(key, ttl, json.dumps(product))
+
+    elapsed = (time.time() - start) * 1000
+    print(f"CACHE MISS ({elapsed:.2f}ms)")
+    return product
 
 
 def invalidate_product_cache(r, product_id: int):
     """Supprimer le cache d'un produit (après mise à jour en DB)"""
-    # TODO
-    pass
+    key = f"product_cache:{product_id}"
+    r.delete(key)
 
 
 def benchmark_cache(r, product_id: int, iterations: int = 20):
     """
-    Effectuer 'iterations' appels à get_product_cached
-    Afficher :
-    - Temps moyen cache HIT
-    - Temps moyen cache MISS
-    - Taux de cache hit (%)
+    Compare cache HIT vs MISS performance
     """
-    # TODO
-    pass
+    hit_times = []
+    miss_times = []
+    hits = 0
+
+    # clear cache first for clean benchmark
+    invalidate_product_cache(r, product_id)
+
+    for i in range(iterations):
+        start = time.time()
+        key = f"product_cache:{product_id}"
+
+        cached = r.get(key)
+
+        if cached:
+            json.loads(cached)
+            elapsed = (time.time() - start) * 1000
+            hit_times.append(elapsed)
+            hits += 1
+        else:
+            slow_db_get_product(product_id)
+            product = slow_db_get_product(product_id)
+            r.setex(key, 600, json.dumps(product))
+            elapsed = (time.time() - start) * 1000
+            miss_times.append(elapsed)
+
+    hit_rate = (hits / iterations) * 100
+
+    avg_hit = sum(hit_times) / len(hit_times) if hit_times else 0
+    avg_miss = sum(miss_times) / len(miss_times) if miss_times else 0
+
+    print("\n=== Benchmark Results ===")
+    print(f"Avg CACHE HIT: {avg_hit:.2f}ms")
+    print(f"Avg CACHE MISS: {avg_miss:.2f}ms")
+    print(f"Hit rate: {hit_rate:.1f}%")
 
 
 if __name__ == "__main__":
     r.flushdb()
-    
+
     print("=== Test Cache-Aside ===")
     print("\nPremier appel (MISS attendu):")
     get_product_cached(r, 1)
-    
+
     print("\nDeuxième appel (HIT attendu):")
     get_product_cached(r, 1)
-    
+
     print("\n=== Benchmark ===")
     benchmark_cache(r, 1, iterations=10)
